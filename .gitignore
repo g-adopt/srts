@@ -1,0 +1,86 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+
+# Executables
+bin/
+!bin/.gitkeep
+
+# Fortran module files
+*.mod
+
+# Backup files (common in Fortran projects)
+*~
+*.f~
+*.F~
+*.h~
+*.c~
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*#
+
+# Library archives (will be generated during build)
+lib/*.a
+!lib/*/
+
+# Output files from processing
+geodyn/outputfiles/
+geodyn/rawfiles/
+geodyn/pwrfiles/
+geodyn/comparefiles/
+geodyn/slices/
+
+# Generated model files
+*.sph
+inpm.*
+oupm.*
+
+# Log files
+*.log
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-*
+.project
+.cproject
+
+# Environment and local configuration
+.env
+.envrc
+
+# Debugging files
+core
+core.*
+vgcore.*
+*.dSYM/
+
+# Archive files (unless specifically needed)
+*.tar
+*.tar.gz
+*.zip
+*.rar
+
+# Compiled documentation
+*.pdf
+!docs/*.pdf
+
+# Personal notes and scratch files
+notes.txt
+TODO.txt
+scratch.*
