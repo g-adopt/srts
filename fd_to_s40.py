@@ -10,8 +10,8 @@ from scipy.spatial import cKDTree
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-from matplotlib.colors import Normalize
-# import spherical_tools as st
+import cmcrameri.cm as cmc
+from matplotlib.colors import TwoSlopeNorm, Normalize
 
 
 def __main__(should_plot_layer: bool = False):
@@ -20,7 +20,7 @@ def __main__(should_plot_layer: bool = False):
 
     # Path to the pvtu file -- this is a gadopt model
     pvtu_file = Path(
-        "/Users/sghelichkhani/Data/ADJOINT_2025/output/output_0.pvtu")
+        "output_0.pvtu")
 
     # path to models directory in S40RTS code
     name = "0Ma_C52_8e8_Kappa"
@@ -62,7 +62,7 @@ def __main__(should_plot_layer: bool = False):
                 np.asarray(model_lat)
             )
         )
-    ).query(np.column_stack(((depth_grid).flatten()/1e3, lon_grid.flatten(), lat_grid.flatten())), k=100)
+    ).query(np.column_stack(((depth_grid).flatten()/1e3, lon_grid.flatten(), lat_grid.flatten())), k=10)
 
     # Compute Gaussian weights based on distances
     sigma = 1.0  # Gaussian width parameter - adjust as needed
@@ -92,12 +92,17 @@ def __main__(should_plot_layer: bool = False):
 
     for key in ["Vs", "Vp", "Vs_elastic", "Vp_elastic"]:
         for ir, dpth in enumerate(depth_profile):
-            # Computing the mean of the layer
+            # Computing the mean of each layer:
             layer_mean = np.mean(models_in_geodetic_coordinates[key][ir, :, :])
-            # Converting to dVs/p
+            # Converting to dlnVs/p (%):
             model_to_be_output = 100 * \
                 (models_in_geodetic_coordinates[key]
                  [ir, :, :] - layer_mean) / layer_mean
+
+            # force top and bottom layers to zero:
+            if ir == 0 or ir == len(depth_profile) - 1:
+                model_to_be_output = np.zeros_like(model_to_be_output)
+
             if should_plot_layer:
                 plot_layer(lon_grid[ir, :, :], lat_grid[ir, :, :], model_to_be_output,
                            save_path=output_dir / f"{name}_{key}.{mapping_names[key]}.layer.{ir:03d}.png")
@@ -125,8 +130,8 @@ def get_dimensional_constants():
         "r_max": 2.208,  # Radius of the Earth in nd
         "r_min": 1.208,  # Radius of the CMB in nd
         "nlayers": 65,
-        "n_lons": 361,
-        "n_lats": 181,
+        "n_lons": 721,
+        "n_lats": 361,
         "depth_res": 50e3,  # in meters
     }
 
@@ -169,9 +174,14 @@ def convert_model(model):
         "SLB_16", "pyrolite", depths=depth_profile,
     )
 
-    # Computing a radial profile of average temperature
+    # Note: This is a very weird way of computing the average temperature profile,
+    # along which we regularise the thermodynamic table. Best would
+    # be to write out the layer avarage from G-ADOPT and use that as the
+    # average temperature profile.
+    # Here we just simply assume that `T_av` field at any point, is the avereage
+    # temperature. Which is a very valid assumption!
     dists, inds = cKDTree(model.point_data["depth"][:, np.newaxis]).query(
-        depth_profile[:, np.newaxis], k=100)
+        depth_profile[:, np.newaxis], k=10)
 
     # A temperautre profile representing the mantle average temperature
     weights = 1.0 / (dists + 1e-12)  # avoid division by zero
@@ -293,8 +303,8 @@ def build_solidus():
     return ghelichkhan_et_al
 
 
-def plot_layer(lons, lats, data, projection='PlateCarree', figsize=(12, 8),
-               cmap='RdBu_r', title=None, colorbar_label='dVs (%)',
+def plot_layer(lons, lats, data, projection='Robinson', figsize=(12, 8),
+               cmap='cmc.vik_r', title=None, colorbar_label='dV (%)',
                vmin=None, vmax=None, levels=20, save_path=None):
     """
     Plot a global map of seismic velocity data using Cartopy.
@@ -380,19 +390,21 @@ def plot_layer(lons, lats, data, projection='PlateCarree', figsize=(12, 8),
         # Use arrays as provided
         lon_grid, lat_grid = lons, lats
 
-    # Set color scale limits
-    if vmin is None:
-        vmin = np.nanmin(data)
-    if vmax is None:
-        vmax = np.nanmax(data)
+        # --- symmetric limits & levels about 0 ---
+        A = float(np.nanmax(np.abs(data)))
+        if not np.isfinite(A) or A == 0.0:
+            A = 1.0  # tiny span for constant layers; keeps TwoSlopeNorm happy
+        vmin, vmax = -A, +A
 
-    # Make symmetric around zero for velocity perturbations
-        if vmin is None and vmax is None:
-            vmax = max(abs(np.nanmin(data)), abs(np.nanmax(data)))
-            vmin = -vmax
+        # symmetric levels (e.g., 41 ticks from -A to +A)
+        n_levels = 41  # tweak as you like; odd number keeps 0 exactly on a level
+        levels = np.linspace(vmin, vmax, n_levels)
 
-    # Create the contour plot
-    norm = Normalize(vmin=vmin, vmax=vmax)
+        # norm centered at 0; if something odd, fall back gracefully
+        try:
+            norm = TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
+        except ValueError:
+            norm = Normalize(vmin=vmin, vmax=vmax)
 
     # Use contourf for filled contours
     contour = ax.contourf(lon_grid, lat_grid, data,
