@@ -76,7 +76,7 @@ def __main__(should_plot_layer: bool = False):
         models_in_geodetic_coordinates[key] = np.einsum(
             'ij,ij->i',
             weights,
-            model.point_data["dVs"][inds]
+            model.point_data[key][inds]
         ).reshape(depth_grid.shape)
 
     # # save depths
@@ -90,11 +90,14 @@ def __main__(should_plot_layer: bool = False):
         "Vp_elastic": "dvp"
     }
 
-    for ir, dpth in enumerate(depth_profile):
-        for key in ["Vs", "Vp", "Vs_elastic", "Vp_elastic"]:
+    for key in ["Vs", "Vp", "Vs_elastic", "Vp_elastic"]:
+        for ir, dpth in enumerate(depth_profile):
+            # Computing the mean of the layer
             layer_mean = np.mean(models_in_geodetic_coordinates[key][ir, :, :])
+            # Converting to dVs/p
+            model_to_be_output = 100 * (models_in_geodetic_coordinates[key] [ir, :, :].flatten() - layer_mean) / layer_mean
             if should_plot_layer:
-                plot_layer(lon_grid[ir, :, :], lat_grid[ir, :, :], models_in_geodetic_coordinates[key][ir, :, :] - layer_mean,
+                plot_layer(lon_grid[ir, :, :], lat_grid[ir, :, :], model_to_be_output,
                            save_path=output_dir / f"{name}_{key}.{mapping_names[key]}.layer.{ir:03d}.png")
 
             output_file_dVs = output_dir / \
@@ -102,8 +105,15 @@ def __main__(should_plot_layer: bool = False):
 
             # output_file_dVp = output_dir / f"{name}.dvp.layer.{i+1:03d}.dat"
             with open(output_file_dVs, mode="w") as f:
-                f.write("\n".join([f"{lat:+.2f} {lon:+.2f} {dat:.5f}" for lat, lon, dat in zip(
-                    lat_grid[ir, :, :].flatten(), lon_grid[ir, :, :].flatten(), models_in_geodetic_coordinates[key][ir, :, :].flatten() - layer_mean)]))
+                f.write(
+                    "\n".join([f"{lon:+.2f} {lat:+.2f} {dat:.5f}"
+                               for lon, lat, dat in zip(
+                        lon_grid[ir, :, :].flatten(),
+                        lat_grid[ir, :, :].flatten(),
+                        model_to_be_output
+                    )
+                    ])
+                )
 
 
 def get_dimensional_constants():
@@ -375,7 +385,7 @@ def plot_layer(lons, lats, data, projection='PlateCarree', figsize=(12, 8),
         vmax = np.nanmax(data)
 
     # Make symmetric around zero for velocity perturbations
-    if colorbar_label == 'dVs (%)' and vmin is None and vmax is None:
+        if vmin is None and vmax is None:
         vmax = max(abs(np.nanmin(data)), abs(np.nanmax(data)))
         vmin = -vmax
 
