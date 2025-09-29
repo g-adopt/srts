@@ -95,7 +95,9 @@ def __main__(should_plot_layer: bool = False):
             # Computing the mean of the layer
             layer_mean = np.mean(models_in_geodetic_coordinates[key][ir, :, :])
             # Converting to dVs/p
-            model_to_be_output = 100 * (models_in_geodetic_coordinates[key] [ir, :, :].flatten() - layer_mean) / layer_mean
+            model_to_be_output = 100 * \
+                (models_in_geodetic_coordinates[key]
+                 [ir, :, :] - layer_mean) / layer_mean
             if should_plot_layer:
                 plot_layer(lon_grid[ir, :, :], lat_grid[ir, :, :], model_to_be_output,
                            save_path=output_dir / f"{name}_{key}.{mapping_names[key]}.layer.{ir:03d}.png")
@@ -110,7 +112,7 @@ def __main__(should_plot_layer: bool = False):
                                for lon, lat, dat in zip(
                         lon_grid[ir, :, :].flatten(),
                         lat_grid[ir, :, :].flatten(),
-                        model_to_be_output
+                        model_to_be_output.flatten(),
                     )
                     ])
                 )
@@ -386,8 +388,8 @@ def plot_layer(lons, lats, data, projection='PlateCarree', figsize=(12, 8),
 
     # Make symmetric around zero for velocity perturbations
         if vmin is None and vmax is None:
-        vmax = max(abs(np.nanmin(data)), abs(np.nanmax(data)))
-        vmin = -vmax
+            vmax = max(abs(np.nanmin(data)), abs(np.nanmax(data)))
+            vmin = -vmax
 
     # Create the contour plot
     norm = Normalize(vmin=vmin, vmax=vmax)
