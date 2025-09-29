@@ -1,17 +1,20 @@
 """ Adopted from the script Tom New has provided
 """
 # %%
-import matplotlib.pyplot as plt
 import numpy as np
 from gdrift.profile import SplineProfile
 import pyvista as pv
 from pathlib import Path
 import gdrift
 from scipy.spatial import cKDTree
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from matplotlib.colors import Normalize
 # import spherical_tools as st
 
 
-def __main__():
+def __main__(should_plot_layer: bool = False):
     # Dimensional constants for conversion and model
     dimensional_constants = get_dimensional_constants()
 
@@ -21,19 +24,27 @@ def __main__():
 
     # path to models directory in S40RTS code
     name = "0Ma_C52_8e8_Kappa"
-    output_dir = Path(f"./interpolated_layers_{name}")
+    output_dir = Path(f"./geodyn/{name}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # load the model
     model = load_pvtu_points(pvtu_file)
-    model, avg_temperature_spline = generate_thermodynamic_model(model)
+    model, avg_temperature_spline = convert_model(model)
 
     # From this point on we are interpolating into a depth profile consitent with
     # srts example model
     # create array of interpolation depths
+    # Just a rough number to make it equivalent to usual asumption of lon lat grids
+    equidistanced_xyz_sphere = gdrift.fibonacci_sphere(n=180 * 360)
+    _, lons, lats = gdrift.cartesian_to_geodetic(
+        equidistanced_xyz_sphere[:, 0],
+        equidistanced_xyz_sphere[:, 1],
+        equidistanced_xyz_sphere[:, 2]
+    )
     lons = np.linspace(-180, 180, dimensional_constants["n_lons"])
     lats = np.linspace(-90, 90, dimensional_constants["n_lats"])
+
     depth_profile = np.linspace(
         0, gdrift.R_earth - gdrift.R_cmb, dimensional_constants["nlayers"])
 
@@ -58,29 +69,49 @@ def __main__():
     weights = np.exp(-0.5 * (dists / sigma)**2)
     weights /= np.sum(weights, axis=1, keepdims=True)  # normalize weights
 
-    # Compute weighted average of dVs using einsum
-    rts_dVs = np.einsum('ij,ij->i', weights,
-                        model.point_data["dVs"][inds]).reshape(depth_grid.shape)
+    models_in_geodetic_coordinates = {}
+
+    for key in ["Vs", "Vp", "Vs_elastic", "Vp_elastic"]:
+        # Compute weighted average of dVs using einsum
+        models_in_geodetic_coordinates[key] = np.einsum(
+            'ij,ij->i',
+            weights,
+            model.point_data["dVs"][inds]
+        ).reshape(depth_grid.shape)
 
     # # save depths
     np.savetxt(output_dir / "depth_layers.dat",
                depth_profile/1e3, fmt='%04d', newline='\n')
 
-    for ir, dpth in enumerate(depth_profile):
-        output_file_dVs = output_dir / f"{name}.dvs.layer.{ir:03d}.dat"
+    mapping_names = {
+        "Vs": "dvs",
+        "Vp": "dvp",
+        "Vs_elastic": "dvs",
+        "Vp_elastic": "dvp"
+    }
 
-        # output_file_dVp = output_dir / f"{name}.dvp.layer.{i+1:03d}.dat"
-        with open(output_file_dVs, mode="w") as f:
-            f.write("\n".join([f"{lat:+.2f} {lon:+.2f} {0 if ir in [0, len(depth_profile)-1] else dat:.5f}" for lat, lon, dat in zip(
-                lat_grid[ir, :, :].flatten(), lon_grid[ir, :, :].flatten(), rts_dVs[ir, :, :].flatten())]))
+    for ir, dpth in enumerate(depth_profile):
+        for key in ["Vs", "Vp", "Vs_elastic", "Vp_elastic"]:
+            layer_mean = np.mean(models_in_geodetic_coordinates[key][ir, :, :])
+            if should_plot_layer:
+                plot_layer(lon_grid[ir, :, :], lat_grid[ir, :, :], models_in_geodetic_coordinates[key][ir, :, :] - layer_mean,
+                           save_path=output_dir / f"{name}_{key}.{mapping_names[key]}.layer.{ir:03d}.png")
+
+            output_file_dVs = output_dir / \
+                f"{name}_{key}.{mapping_names[key]}.layer.{ir:03d}.dat"
+
+            # output_file_dVp = output_dir / f"{name}.dvp.layer.{i+1:03d}.dat"
+            with open(output_file_dVs, mode="w") as f:
+                f.write("\n".join([f"{lat:+.2f} {lon:+.2f} {dat:.5f}" for lat, lon, dat in zip(
+                    lat_grid[ir, :, :].flatten(), lon_grid[ir, :, :].flatten(), models_in_geodetic_coordinates[key][ir, :, :].flatten() - layer_mean)]))
 
 
 def get_dimensional_constants():
     return {
-        "T_0": 3700,
-        "T_1": 300,
-        "r_max": 2.208,
-        "r_min": 1.208,
+        "T_0": 3700,  # Used for dimensionalising temperature T_nd * T_0 + T_1
+        "T_1": 300,  # See above
+        "r_max": 2.208,  # Radius of the Earth in nd
+        "r_min": 1.208,  # Radius of the CMB in nd
         "nlayers": 65,
         "n_lons": 361,
         "n_lats": 181,
@@ -116,7 +147,7 @@ def load_pvtu_points(pvtu_file):
     return model
 
 
-def generate_thermodynamic_model(model):
+def convert_model(model):
     dimensional_constants = get_dimensional_constants()
     # This is the depth profile for which we generate the thermodynamic model
     depth_profile = np.linspace(
@@ -159,21 +190,13 @@ def generate_thermodynamic_model(model):
 
     # compute seismic velocities in P and S
     model.point_data["Vs"] = linear_anelastic_slb_pyrolite.temperature_to_vs(
-        temperature=np.array(model["T"]), depth=np.array(model["depth"]))
+        temperature=np.asarray(model["T"]), depth=np.asarray(model["depth"]))
     model.point_data["Vp"] = linear_anelastic_slb_pyrolite.temperature_to_vp(
-        temperature=np.array(model["T"]), depth=np.array(model["depth"]))
-
-    # compute layer average seismic velocities in P and S
-    model.point_data["Vs_av"] = linear_slb_pyrolite.temperature_to_vs(
-        temperature=np.array(model["T_av"]), depth=np.array(model["depth"]))
-    model.point_data["Vp_av"] = linear_slb_pyrolite.temperature_to_vp(
-        temperature=np.array(model["T_av"]), depth=np.array(model["depth"]))
-
-    # compute fractional perturbations in P and S
-    model.point_data["dVs"] = (
-        100 * (model["Vs"] - model["Vs_av"]) / model["Vs_av"])
-    model.point_data["dVp"] = (
-        100 * (model["Vp"] - model["Vp_av"]) / model["Vp_av"])
+        temperature=np.asarray(model["T"]), depth=np.asarray(model["depth"]))
+    model.point_data["Vs_elastic"] = linear_slb_pyrolite.temperature_to_vs(
+        temperature=np.asarray(model["T"]), depth=np.asarray(model["depth"]))
+    model.point_data["Vp_elastic"] = linear_slb_pyrolite.temperature_to_vp(
+        temperature=np.asarray(model["T"]), depth=np.asarray(model["depth"]))
 
     return model, avg_temperature_spline
 
@@ -258,6 +281,132 @@ def build_solidus():
     return ghelichkhan_et_al
 
 
+def plot_layer(lons, lats, data, projection='PlateCarree', figsize=(12, 8),
+               cmap='RdBu_r', title=None, colorbar_label='dVs (%)',
+               vmin=None, vmax=None, levels=20, save_path=None):
+    """
+    Plot a global map of seismic velocity data using Cartopy.
+
+    Parameters:
+    -----------
+    lons : array-like
+        Longitude values (degrees)
+    lats : array-like
+        Latitude values (degrees)
+    data : array-like
+        Data values to plot (e.g., velocity perturbations)
+    projection : str, optional
+        Cartopy projection name. Options: 'PlateCarree', 'Robinson',
+        'Mollweide',
+        'Orthographic', 'NorthPolarStereo', 'SouthPolarStereo'
+    figsize : tuple, optional
+        Figure size (width, height) in inches
+    cmap : str, optional
+        Colormap name
+    title : str, optional
+        Plot title
+    colorbar_label : str, optional
+        Label for the colorbar
+    vmin, vmax : float, optional
+        Color scale limits. If None, uses data min/max
+    levels : int, optional
+        Number of contour levels
+    save_path : str or Path, optional
+        Path to save the figure
+
+    Returns:
+    --------
+    fig, ax : matplotlib figure and axis objects
+    """
+
+    # Set up the projection
+    projection_dict = {
+        'PlateCarree': ccrs.PlateCarree(),
+        'Robinson': ccrs.Robinson(),
+        'Mollweide': ccrs.Mollweide(),
+        'Orthographic': ccrs.Orthographic(central_longitude=0,
+                                          central_latitude=0),
+        'NorthPolarStereo': ccrs.NorthPolarStereo(),
+        'SouthPolarStereo': ccrs.SouthPolarStereo()
+    }
+
+    proj = projection_dict.get(projection, ccrs.PlateCarree())
+
+    # Create figure and axis
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(1, 1, 1, projection=proj)
+
+    # Add map features
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+    ax.add_feature(cfeature.BORDERS, linewidth=0.3)
+    ax.add_feature(cfeature.OCEAN, color='lightblue', alpha=0.3)
+    ax.add_feature(cfeature.LAND, color='lightgray', alpha=0.3)
+
+    # Set global extent for most projections
+    if projection not in ['NorthPolarStereo', 'SouthPolarStereo']:
+        ax.set_global()
+        ax.gridlines(draw_labels=True, dms=True, x_inline=False,
+                     y_inline=False, linewidth=0.5, alpha=0.5)
+
+    # Convert data to 2D arrays if needed
+    lons = np.asarray(lons)
+    lats = np.asarray(lats)
+    data = np.asarray(data)
+
+    # Handle different input formats
+    if lons.ndim == 1 and lats.ndim == 1:
+        # Create meshgrid if 1D arrays are provided
+        lon_grid, lat_grid = np.meshgrid(lons, lats)
+        if data.shape != lon_grid.shape:
+            # Reshape data to match grid if necessary
+            if data.size == lon_grid.size:
+                data = data.reshape(lon_grid.shape)
+            else:
+                raise ValueError(
+                    "Data dimensions don't match coordinate dimensions")
+    else:
+        # Use arrays as provided
+        lon_grid, lat_grid = lons, lats
+
+    # Set color scale limits
+    if vmin is None:
+        vmin = np.nanmin(data)
+    if vmax is None:
+        vmax = np.nanmax(data)
+
+    # Make symmetric around zero for velocity perturbations
+    if colorbar_label == 'dVs (%)' and vmin is None and vmax is None:
+        vmax = max(abs(np.nanmin(data)), abs(np.nanmax(data)))
+        vmin = -vmax
+
+    # Create the contour plot
+    norm = Normalize(vmin=vmin, vmax=vmax)
+
+    # Use contourf for filled contours
+    contour = ax.contourf(lon_grid, lat_grid, data,
+                          levels=levels, cmap=cmap, norm=norm,
+                          transform=ccrs.PlateCarree(), extend='both')
+
+    # Add colorbar
+    cbar = plt.colorbar(contour, ax=ax, orientation='horizontal',
+                        pad=0.08, shrink=0.8, aspect=30)
+    cbar.set_label(colorbar_label, fontsize=12)
+
+    # Set title
+    if title:
+        ax.set_title(title, fontsize=14, fontweight='bold')
+
+    # Adjust layout
+    plt.tight_layout()
+
+    # Save figure if path provided
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Figure saved to: {save_path}")
+
+    return fig, ax
+
+
 #
 if __name__ == "__main__":
-    __main__()
+    __main__(should_plot_layer=True)
