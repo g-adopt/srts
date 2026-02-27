@@ -306,6 +306,12 @@ pip install -e ".[test]"
 
 ### Usage
 
+The package offers two interfaces: a file-based pipeline function for batch processing, and a class-based API for composable, in-memory workflows.
+
+#### File-based pipeline
+
+For users who already have layer `.dat` files on disk, `tomographic_filter()` runs the entire pipeline in one call:
+
 ```python
 from srts import tomographic_filter
 
@@ -323,7 +329,32 @@ filt = result["filt_coeffs"]     # filtered model (ndp x natd)
 analysis = result["analysis"]    # power spectra, correlations vs reference
 ```
 
-Individual pipeline steps are also available:
+#### Class-based API
+
+For programmatic workflows where data lives in memory (numpy arrays, simulation output, etc.), three classes separate the concerns of spatial expansion, depth projection, and resolution filtering. All public methods accept and return pyshtools `cilm[2, lmax+1, lmax+1]` arrays.
+
+```python
+from srts import S40RTS, SphericalHarmonicExpansion, DepthParameterization
+
+# Expand grid data to spherical harmonics
+expander = SphericalHarmonicExpansion(lon, lat, lmax=40)
+layer_cilms = expander.expand_batch(values)  # (nlayers, 2, 41, 41)
+
+# Project onto the 21-spline depth basis
+projector = DepthParameterization()
+model = projector.reparameterize(list(layer_cilms), depth_boundaries)
+
+# Apply the S40RTS resolution matrix
+s40 = S40RTS()
+filtered = s40.filter(model)  # (ndp, 2, 41, 41)
+
+# Evaluate at a specific depth
+coeffs_1000km = DepthParameterization.evaluate_at_depth(filtered, 1000.0)
+```
+
+Factory functions `S40RTS()`, `S20RTS()`, and `S12RTS()` are provided for convenience. See [DETAILS.md](DETAILS.md) for a thorough walkthrough of the class-based API.
+
+Individual pipeline steps from the functional API are also available:
 
 ```python
 from srts.parameterization import reparameterize

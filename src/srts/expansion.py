@@ -17,7 +17,7 @@ import numpy as np
 import pyshtools
 import scipy.linalg
 
-from srts.coeffs import _index_tables
+from srts.coeffs import _index_tables, fortran_flat_raw_to_shcoeffs
 
 
 @lru_cache(maxsize=8)
@@ -207,3 +207,46 @@ def expand_with_precomputed(precomp: dict, values: np.ndarray) -> np.ndarray:
     x = V @ (projections / (lam + precomp["damp"]))
     x *= precomp["wnorm"] * 0.01
     return x
+
+
+class SphericalHarmonicExpansion:
+    """Regularized least-squares SH expansion with cached grid operator.
+
+    Wraps precompute_expansion + expand_with_precomputed, returning
+    pyshtools cilm arrays instead of internal flat format.
+    """
+
+    def __init__(self, lon: np.ndarray, lat: np.ndarray, lmax: int, damp: float = 1.0):
+        self._lmax = lmax
+        self._precomp = precompute_expansion(lon, lat, lmax, damp)
+
+    @property
+    def lmax(self) -> int:
+        return self._lmax
+
+    def expand(self, values: np.ndarray) -> np.ndarray:
+        """Expand grid values into spherical harmonic coefficients.
+
+        Args:
+            values: Grid values, shape (npoints,).
+
+        Returns:
+            cilm array, shape (2, lmax+1, lmax+1).
+        """
+        raw = expand_with_precomputed(self._precomp, values)
+        return fortran_flat_raw_to_shcoeffs(raw, self._lmax)
+
+    def expand_batch(self, values_batch: np.ndarray) -> np.ndarray:
+        """Expand multiple layers of grid values at once.
+
+        Args:
+            values_batch: Grid values, shape (nlayers, npoints).
+
+        Returns:
+            cilm arrays, shape (nlayers, 2, lmax+1, lmax+1).
+        """
+        nlayers = values_batch.shape[0]
+        result = np.empty((nlayers, 2, self._lmax + 1, self._lmax + 1), dtype=np.float64)
+        for i in range(nlayers):
+            result[i] = self.expand(values_batch[i])
+        return result

@@ -99,3 +99,37 @@ def shcoeffs_to_fortran_flat_raw(cilm: np.ndarray) -> np.ndarray:
     flat = shcoeffs_to_fortran_flat(cilm_scaled)
     flat *= 0.01
     return flat
+
+
+def cilm_stack_to_internal(cilm_stack: np.ndarray) -> np.ndarray:
+    """Convert a stack of cilm arrays to internal flat format.
+
+    Args:
+        cilm_stack: shape (ndepths, 2, lmax+1, lmax+1).
+
+    Returns:
+        shape (ndepths, natd) in Fortran flat raw convention.
+    """
+    ndepths = cilm_stack.shape[0]
+    natd = (cilm_stack.shape[2]) ** 2
+    result = np.empty((ndepths, natd), dtype=np.float64)
+    for i in range(ndepths):
+        result[i] = shcoeffs_to_fortran_flat_raw(cilm_stack[i])
+    return result
+
+
+def internal_to_cilm_stack(flat_stack: np.ndarray, lmax: int) -> np.ndarray:
+    """Convert internal flat format to a stack of cilm arrays.
+
+    Args:
+        flat_stack: shape (ndepths, natd) in Fortran flat raw convention.
+        lmax: Maximum spherical harmonic degree.
+
+    Returns:
+        shape (ndepths, 2, lmax+1, lmax+1).
+    """
+    ndepths = flat_stack.shape[0]
+    result = np.empty((ndepths, 2, lmax + 1, lmax + 1), dtype=np.float64)
+    for i in range(ndepths):
+        result[i] = fortran_flat_raw_to_shcoeffs(flat_stack[i], lmax)
+    return result
