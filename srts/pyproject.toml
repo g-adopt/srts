@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "srts"
+version = "0.1.0"
+description = "Tomographic filtering following Ritsema et al. (2007)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pyshtools>=4.10",
+    "h5py>=3.8",
+]
+
+[project.optional-dependencies]
+viz = ["matplotlib", "cartopy"]
+test = ["pytest>=7.0", "pyshtools>=4.10"]
+dev = ["pytest>=7.0", "mypy"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+srts = ["data/*.h5"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
