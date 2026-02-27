@@ -175,7 +175,7 @@ class TestFiltering:
         max_val = np.max(np.abs(fort))
         max_diff = np.max(np.abs(filt_coeffs - fort))
         rel_diff = max_diff / max_val
-        assert rel_diff < 0.01, (
+        assert rel_diff < 0.001, (
             f"Filtering relative diff = {rel_diff:.4e}"
         )
 
@@ -191,7 +191,7 @@ class TestFiltering:
             if np.all(np.abs(fort[i]) < 1e-20):
                 continue
             r = np.corrcoef(filt_coeffs[i], fort[i])[0, 1]
-            assert r > 0.999, f"Filtered depth level {i}: correlation = {r:.6f}"
+            assert r > 0.99999, f"Filtered depth level {i}: correlation = {r:.6f}"
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ class TestDepthEvaluation:
         if max_val > 1e-20:
             max_diff = np.max(np.abs(python_raw - fortran_raw))
             # Both read the same .sph file, so differences are purely numerical
-            assert max_diff / max_val < 1e-4, (
+            assert max_diff / max_val < 1e-5, (
                 f"Depth {depth} km: rel diff = {max_diff / max_val:.4e}"
             )
 
@@ -244,7 +244,7 @@ class TestDepthEvaluation:
         max_val = np.max(np.abs(fortran_raw))
         if max_val > 1e-20:
             max_diff = np.max(np.abs(python_raw - fortran_raw))
-            assert max_diff / max_val < 1e-4, (
+            assert max_diff / max_val < 1e-5, (
                 f"Depth {depth} km: rel diff = {max_diff / max_val:.4e}"
             )
 
@@ -277,7 +277,7 @@ class TestPowerSpectrum:
             )
             _, total = power_spectrum(raw, DEGREE)
             python_power = total * 100  # match Fortran *100 convention
-            assert python_power == pytest.approx(fortran_power[i], rel=0.01), (
+            assert python_power == pytest.approx(fortran_power[i], rel=0.001), (
                 f"Depth {depth} km: python={python_power:.6f}, "
                 f"fortran={fortran_power[i]:.6f}"
             )
@@ -298,7 +298,7 @@ class TestPowerSpectrum:
             )
             _, total = power_spectrum(raw, DEGREE)
             python_power = total * 100
-            assert python_power == pytest.approx(fortran_power[i], rel=0.01), (
+            assert python_power == pytest.approx(fortran_power[i], rel=0.001), (
                 f"Depth {depth} km: python={python_power:.6f}, "
                 f"fortran={fortran_power[i]:.6f}"
             )
@@ -326,7 +326,7 @@ class TestPowerSpectrum:
             np.testing.assert_allclose(
                 python_per_deg[: fortran_per_deg.shape[1]],
                 fortran_per_deg[idx],
-                rtol=0.01,
+                rtol=0.001,
                 err_msg=f"Per-degree power mismatch at {depth} km",
             )
 
@@ -358,7 +358,7 @@ class TestCorrelation:
             raw_ref = evaluate_at_depth(ref_sph, DEGREE, depth)
             _, total = correlation(raw_repar, raw_ref, DEGREE)
 
-            assert total == pytest.approx(fortran_corr[i], abs=0.01), (
+            assert total == pytest.approx(fortran_corr[i], abs=0.001), (
                 f"Depth {depth} km: python={total:.6f}, "
                 f"fortran={fortran_corr[i]:.6f}"
             )
@@ -381,7 +381,7 @@ class TestCorrelation:
             raw_ref = evaluate_at_depth(ref_sph, DEGREE, depth)
             _, total = correlation(raw_filt, raw_ref, DEGREE)
 
-            assert total == pytest.approx(fortran_corr[i], abs=0.01), (
+            assert total == pytest.approx(fortran_corr[i], abs=0.001), (
                 f"Depth {depth} km: python={total:.6f}, "
                 f"fortran={fortran_corr[i]:.6f}"
             )
@@ -410,7 +410,7 @@ class TestCorrelation:
             np.testing.assert_allclose(
                 per_deg[1: fortran_per_deg.shape[1]],
                 fortran_per_deg[idx, 1:],
-                atol=0.01,
+                atol=0.001,
                 err_msg=f"Per-degree correlation mismatch at {depth} km",
             )
 
@@ -450,7 +450,7 @@ class TestPointEvaluation:
         if max_val > 1e-10:
             max_diff = np.max(np.abs(python_vals - expected))
             rel_diff = max_diff / max_val
-            assert rel_diff < 0.05, (
+            assert rel_diff < 0.001, (
                 f"Depth {depth} km: rel diff = {rel_diff:.4e} "
                 f"(max_diff={max_diff:.4e}, max_val={max_val:.4e})"
             )
@@ -478,7 +478,7 @@ class TestPointEvaluation:
         if max_val > 1e-10:
             max_diff = np.max(np.abs(python_vals - expected))
             rel_diff = max_diff / max_val
-            assert rel_diff < 0.05, (
+            assert rel_diff < 0.001, (
                 f"Depth {depth} km: rel diff = {rel_diff:.4e}"
             )
 
@@ -533,7 +533,7 @@ class TestEndToEnd:
         python_power = result["analysis"]["power_repar"] * 100
 
         np.testing.assert_allclose(
-            python_power, fortran_power, rtol=0.05,
+            python_power, fortran_power, rtol=0.03,
             err_msg="End-to-end reparameterized power mismatch",
         )
 
@@ -548,7 +548,7 @@ class TestEndToEnd:
         python_power = result["analysis"]["power_filt"] * 100
 
         np.testing.assert_allclose(
-            python_power, fortran_power, rtol=0.05,
+            python_power, fortran_power, rtol=0.02,
             err_msg="End-to-end filtered power mismatch",
         )
 
@@ -563,7 +563,7 @@ class TestEndToEnd:
         python_corr = result["analysis"]["corr_repar_ref"]
 
         np.testing.assert_allclose(
-            python_corr, fortran_corr, atol=0.05,
+            python_corr, fortran_corr, atol=0.01,
             err_msg="End-to-end reparameterized correlation mismatch",
         )
 
@@ -578,6 +578,97 @@ class TestEndToEnd:
         python_corr = result["analysis"]["corr_filt_ref"]
 
         np.testing.assert_allclose(
-            python_corr, fortran_corr, atol=0.05,
+            python_corr, fortran_corr, atol=0.01,
             err_msg="End-to-end filtered correlation mismatch",
         )
+
+
+# ---------------------------------------------------------------------------
+# Multi-degree validation (S12RTS, S20RTS, S40RTS)
+# ---------------------------------------------------------------------------
+
+
+class TestMultiDegreeFiltering:
+    """Validate filtering for all supported degrees (12, 20, 40).
+
+    Uses the published SxRTS reference model as input rather than Fortran
+    reference outputs, so these tests run without external data. They catch
+    wrong array dimensions, wrong eps values, broken model loading, wrong
+    eigenvector indexing, and other degree-dependent bugs.
+    """
+
+    @pytest.mark.parametrize("degree", [12, 20, 40])
+    def test_filtering_shape(self, degree):
+        md = load_model_data(degree)
+        ref = md.reference_coefficients
+        filtered = apply_resolution_matrix(ref, md)
+        filt_coeffs, ndmn, ndmx = extract_sp_from_spt(filtered, md)
+        assert filt_coeffs.shape == ref.shape, (
+            f"S{degree}RTS: filtered shape {filt_coeffs.shape} != "
+            f"input shape {ref.shape}"
+        )
+
+    @pytest.mark.parametrize("degree", [12, 20, 40])
+    def test_filtering_self_correlation(self, degree):
+        """Filtered reference model should correlate highly with the original.
+
+        The published tomographic models are well-resolved, so filtering
+        the reference through its own resolution matrix should preserve
+        most of the signal.
+        """
+        md = load_model_data(degree)
+        ref = md.reference_coefficients
+        filtered = apply_resolution_matrix(ref, md)
+        filt_coeffs, _, _ = extract_sp_from_spt(filtered, md)
+
+        for depth in [500.0, 1000.0, 2000.0]:
+            raw_ref = evaluate_at_depth(ref, degree, depth)
+            raw_filt = evaluate_at_depth(filt_coeffs, degree, depth)
+            _, r = correlation(raw_ref, raw_filt, degree)
+            assert r > 0.8, (
+                f"S{degree}RTS at {depth} km: self-correlation = {r:.4f}, "
+                f"expected > 0.8"
+            )
+
+    @pytest.mark.parametrize("degree", [12, 20, 40])
+    def test_filtering_power_bounded(self, degree):
+        """Power spectrum of filtered model should not exceed the input.
+
+        The resolution matrix is a contraction: filtering cannot amplify
+        the total power at any depth.
+        """
+        md = load_model_data(degree)
+        ref = md.reference_coefficients
+        filtered = apply_resolution_matrix(ref, md)
+        filt_coeffs, _, _ = extract_sp_from_spt(filtered, md)
+
+        for depth in [500.0, 1000.0, 2000.0]:
+            raw_ref = evaluate_at_depth(ref, degree, depth)
+            raw_filt = evaluate_at_depth(filt_coeffs, degree, depth)
+            _, power_ref = power_spectrum(raw_ref, degree)
+            _, power_filt = power_spectrum(raw_filt, degree)
+            assert power_filt >= 0, (
+                f"S{degree}RTS at {depth} km: negative filtered power"
+            )
+            assert power_filt <= power_ref * 1.01, (
+                f"S{degree}RTS at {depth} km: filtered power {power_filt:.6e} "
+                f"exceeds input {power_ref:.6e}"
+            )
+
+    @pytest.mark.parametrize("degree", [12, 20, 40])
+    def test_depth_evaluation_shape(self, degree):
+        """Evaluate filtered model at representative depths, check shapes."""
+        md = load_model_data(degree)
+        ref = md.reference_coefficients
+        filtered = apply_resolution_matrix(ref, md)
+        filt_coeffs, _, _ = extract_sp_from_spt(filtered, md)
+
+        natd = (degree + 1) ** 2
+        for depth in [200.0, 1000.0, 2500.0]:
+            raw = evaluate_at_depth(filt_coeffs, degree, depth)
+            assert raw.shape == (natd,), (
+                f"S{degree}RTS at {depth} km: raw shape {raw.shape} != ({natd},)"
+            )
+            assert np.all(np.isfinite(raw)), (
+                f"S{degree}RTS at {depth} km: non-finite values in raw output"
+            )

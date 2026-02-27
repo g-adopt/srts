@@ -294,15 +294,71 @@ Files are expanded laterally at all depths using equidistant sampling (1°, 2°,
 - `inpm.S40.examplefile.repar.0300.raw.dat`
 - `oupm.S40.examplefile.filt.0300.raw.dat`
 
+## Python Package (srts)
+
+A pure Python reimplementation of the entire Fortran pipeline is available as the `srts` package. It provides the same tomographic filtering functionality with no compiled dependencies beyond NumPy, SciPy, pyshtools, and h5py.
+
+### Installation
+
+```bash
+pip install -e ".[test]"
+```
+
+### Usage
+
+```python
+from srts import tomographic_filter
+
+result = tomographic_filter(
+    "geodyn/examplemodel",    # model directory
+    "examplefile.dvs",        # model name
+    first_layer=1,
+    last_layer=64,
+    degree=40,                # 12, 20, or 40
+    run_analysis=True,
+)
+
+repar = result["repar_coeffs"]   # reparameterized model (21 x natd)
+filt = result["filt_coeffs"]     # filtered model (ndp x natd)
+analysis = result["analysis"]    # power spectra, correlations vs reference
+```
+
+Individual pipeline steps are also available:
+
+```python
+from srts.parameterization import reparameterize
+from srts.model_data import load_model_data
+from srts.filtering import apply_resolution_matrix, extract_sp_from_spt
+from srts.analysis import evaluate_at_depth, power_spectrum, correlation
+```
+
+### Numerical Precision
+
+The Python implementation is more precise than the Fortran pipeline. The original code pipes intermediate results through ASCII files in Fortran `e12.4` format, which provides roughly 4 significant digits per value. Over the course of 60+ layer iterations, these rounding errors accumulate. The Python package uses float64 throughout with no intermediate truncation.
+
+When both implementations start from the same `.sph` file (isolating the effect of intermediate precision), agreement is 6 to 7 significant digits for filtering, depth evaluation, power spectra, and cross-correlation. The reparameterization step, which accumulates all 60+ layers of ASCII truncation in the Fortran path, shows a roughly 0.7% global discrepancy that is entirely attributable to the Fortran's precision loss.
+
+### Validation
+
+The test suite uses a two-tier strategy. 76 unit tests verify each module in isolation (splines, spherical harmonic expansion, I/O round-trips, etc.). 36+ Fortran validation tests compare every pipeline stage against reference outputs produced by the original Fortran `dofilt_ES_new` on an example geodynamic model with S40RTS.
+
+The validation tests are organized by pipeline stage. For isolated steps where both codes read the same `.sph` input file, tolerances are tight (relative differences below 1e-5). For the full end-to-end pipeline, tolerances are slightly looser to accommodate the genuine precision gap from accumulated ASCII truncation in the Fortran path. Additionally, a multi-degree test class validates the filtering pipeline for all three resolutions (S12RTS, S20RTS, S40RTS) using self-consistency checks on the published reference models.
+
+To run the full test suite:
+
+```bash
+python -m pytest tests/ -v
+```
+
 ## Support
 
 If you encounter any problems or have questions, please contact:
 
 **Paula Koelemeijer**
-📧 pjkoelemeijer@cantab.net
+pjkoelemeijer@cantab.net
 
 **Jeroen Ritsema**
-📧 jritsema@umich.edu
+jritsema@umich.edu
 
 ## References
 

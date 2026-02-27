@@ -54,7 +54,7 @@ class TestFilteringAgainstFortran:
         # the stored Fortran filtered output should match within that precision.
         max_abs_diff = np.max(np.abs(filt_coeffs - filt_ref_coeffs))
         max_val = np.max(np.abs(filt_ref_coeffs))
-        assert max_abs_diff < 0.01 * max_val, (
+        assert max_abs_diff < 0.001 * max_val, (
             f"Max abs diff={max_abs_diff:.6e}, max value={max_val:.6e}"
         )
 
@@ -74,7 +74,7 @@ class TestFilteringAgainstFortran:
         pd_python, total_python = power_spectrum(raw_python, 40)
         pd_fortran, total_fortran = power_spectrum(raw_fortran, 40)
 
-        assert total_python == pytest.approx(total_fortran, rel=0.05)
+        assert total_python == pytest.approx(total_fortran, rel=0.005)
 
     def test_correlation_with_reference(self, reference_data):
         """Filtered model should have positive correlation with the real S40RTS at 1000 km."""
