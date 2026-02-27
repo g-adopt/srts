@@ -1,6 +1,0 @@
-src/srts/data/*.h5
-test-data/
-__pycache__/
-*.pyc
-.pytest_cache/
-*.egg-info/
