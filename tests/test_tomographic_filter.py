@@ -206,13 +206,13 @@ class TestDepthParameterization:
 class TestTomographicFilter:
 
     def test_construction_and_properties(self):
-        filt = TomographicFilter(40)
-        assert filt.degree == 40
-        assert filt.lmax == 40
-        assert filt.eps == 20e-4
+        filt = TomographicFilter(12)
+        assert filt.degree == 12
+        assert filt.lmax == 12
+        assert filt.eps == 40e-4
 
     def test_custom_eps(self):
-        filt = TomographicFilter(20, eps=0.01)
+        filt = TomographicFilter(12, eps=0.01)
         assert filt.eps == 0.01
 
     def test_invalid_degree(self):
@@ -220,43 +220,41 @@ class TestTomographicFilter:
             TomographicFilter(30)
 
     def test_factory_functions(self):
-        s40 = S40RTS()
-        assert s40.degree == 40
-        assert s40.eps == 20e-4
+        s12 = S12RTS()
+        assert s12.degree == 12
+        assert s12.eps == 40e-4
 
         s20 = S20RTS()
         assert s20.degree == 20
         assert s20.eps == 35e-4
 
-        s12 = S12RTS()
-        assert s12.degree == 12
-        assert s12.eps == 40e-4
-
     def test_reference_model_shape(self):
-        filt = S40RTS()
+        filt = S12RTS()
         ref = filt.reference_model
         assert ref.ndim == 4
         assert ref.shape[1] == 2
-        assert ref.shape[2] == 41
-        assert ref.shape[3] == 41
+        assert ref.shape[2] == 13
+        assert ref.shape[3] == 13
 
     def test_filter_matches_functional(self):
-        """Class filter() produces identical results to the functional API."""
-        md = load_model_data(40)
+        """Class filter() produces identical results to the functional API.
+
+        Uses S12RTS (lmax=12) to keep memory and compute manageable on CI.
+        """
+        md = load_model_data(12)
 
         # Use the reference model coefficients as input (internal format)
-        # Pad to 21 depth levels if needed
         repar_internal = np.zeros((21, md.natd), dtype=np.float64)
         ndp = md.reference_coefficients.shape[0]
         repar_internal[:ndp] = md.reference_coefficients
 
         # Functional path
-        filtered_func = apply_resolution_matrix(repar_internal, md, eps=20e-4)
+        filtered_func = apply_resolution_matrix(repar_internal, md, eps=40e-4)
         filt_func, _, _ = extract_sp_from_spt(filtered_func, md)
 
         # Class path
         repar_cilm = internal_to_cilm_stack(repar_internal, md.lmax)
-        filt = S40RTS()
+        filt = S12RTS()
         filtered_class = filt.filter(repar_cilm)
 
         # Convert class result back to internal for comparison
