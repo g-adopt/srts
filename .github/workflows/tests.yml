@@ -1,0 +1,59 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, modern]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * *"  # nightly at 03:00 UTC
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package
+        run: pip install -e ".[test]"
+
+      - name: Download HDF5 model data
+        run: |
+          mkdir -p src/srts/data
+          for f in S12RTS.h5 S20RTS.h5 S40RTS.h5; do
+            wget -q "https://gadopt.syd1.digitaloceanspaces.com/srts/$f" -O "src/srts/data/$f"
+          done
+
+      - name: Download tier_1 reference data
+        run: |
+          mkdir -p test-data/fortran-reference
+          wget -q "https://gadopt.syd1.digitaloceanspaces.com/srts/tier_1.tar.gz" -O /tmp/tier_1.tar.gz
+          tar -xzf /tmp/tier_1.tar.gz -C test-data/fortran-reference
+
+      - name: Download tier_2 reference data (nightly only)
+        if: github.event_name == 'schedule'
+        run: |
+          wget -q "https://gadopt.syd1.digitaloceanspaces.com/srts/tier_2.tar.gz" -O /tmp/tier_2.tar.gz
+          tar -xzf /tmp/tier_2.tar.gz -C test-data/fortran-reference
+
+      - name: Run unit tests
+        run: python -m pytest tests/ --ignore=tests/test_fortran_validation.py -v
+
+      - name: Run Fortran validation (fast subset)
+        if: github.event_name != 'schedule'
+        run: python -m pytest tests/test_fortran_validation.py -v -k "not Reparameterization and not EndToEnd and not (MultiDegreeFiltering and 40)"
+
+      - name: Run full Fortran validation (nightly)
+        if: github.event_name == 'schedule'
+        run: python -m pytest tests/test_fortran_validation.py -v

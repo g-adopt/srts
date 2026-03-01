@@ -1,5 +1,0 @@
-
-      DOUBLE PRECISION FUNCTION DFLOAT(I)
-      DFLOAT=DBLE(I)
-      RETURN
-      END
