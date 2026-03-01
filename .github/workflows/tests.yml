@@ -11,6 +11,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.12", "3.13"]
@@ -51,7 +52,7 @@ jobs:
 
       - name: Run Fortran validation (fast subset)
         if: github.event_name != 'schedule'
-        run: python -m pytest tests/test_fortran_validation.py -v -k "not Reparameterization and not EndToEnd"
+        run: python -m pytest tests/test_fortran_validation.py -v -k "not Reparameterization and not EndToEnd and not (MultiDegreeFiltering and 40)"
 
       - name: Run full Fortran validation (nightly)
         if: github.event_name == 'schedule'
