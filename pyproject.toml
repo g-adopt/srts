@@ -20,7 +20,7 @@ test = ["pytest>=7.0", "pyshtools>=4.10"]
 dev = ["pytest>=7.0", "mypy"]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
 
 [tool.setuptools.package-data]
 srts = ["data/*.h5"]

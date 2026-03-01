@@ -30,9 +30,9 @@ jobs:
 
       - name: Download HDF5 model data
         run: |
-          mkdir -p src/srts/data
+          mkdir -p srts/data
           for f in S12RTS.h5 S20RTS.h5 S40RTS.h5; do
-            wget -q "https://gadopt.syd1.digitaloceanspaces.com/srts/$f" -O "src/srts/data/$f"
+            wget -q "https://gadopt.syd1.digitaloceanspaces.com/srts/$f" -O "srts/data/$f"
           done
 
       - name: Download tier_1 reference data

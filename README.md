@@ -1,344 +1,171 @@
-# Resolution Matrix - S[40, 20, 12]RTS
+# srts — Tomographic Filtering for Geodynamic Models
 
-## Introduction
-Scripts to reparametrise and tomographically filter a geodynamic model using the S20RTS, S40RTS or S12RTS resolution operators, see *Ritsema et al., 1999*, *Ritsema et al., 2011* and *Koelemeijer et al., 2016* for details regarding the models respectively, and *Ritsema et al., 2007* for details regarding the resolution operator.  These resolution filters allow you to filter your model
-up to degree 12 (S12RTS), 20 (S20RTS) or degree 40 (S40RTS).
+`srts` is a Python package for applying tomographic resolution filters to geodynamic models, following the methodology of Ritsema et al. (2007). It wraps the S12RTS, S20RTS, and S40RTS resolution operators, letting you reparameterize a geodynamic model onto the seismic tomography basis and then apply the tomographic resolution matrix to produce a filtered model — i.e., what a seismologist would recover from your model given real data coverage.
 
-`dofilt_ES_new` is a bash scripts that filters only the S-wave structure. This script will give a reparametrised model file in the `.sph` format,
-given by the file starting with `inpm`.  The parametrisation consists of **21 clamped cubic splines in depth and spherical harmonics up to the specified degree laterally**.
-The script will also give a tomographically filtered model (again a".sph" file), starting with `oupm`, where the resolution operator has been applied.
-
-These ".sph" files can be processed and plotted using the S20RTS/S40RTS plotting scripts available on the website of Jeroen Ritsema:
-http://www.earth.lsa.umich.edu/~jritsema/S20RTS_plotting.tar.gz
-
-Newer versions for both GMT4 and GMT5 are available on the website of Paula Koelemeijer:
-https://www.earth.ox.ac.uk/~univ4152/files/SP12RTS_plotting.tar.gz
-https://www.earth.ox.ac.uk/~univ4152/files/SP12RTS_plotting_GMT5.tar.gz
-
-New in this script (compared to February 2016) is that the ".sph" files are automatically processed and expanded to give generate slices through the reparameterised ("inpm") and filtered ("oupm") models.  In addition, the correlation between these and the tomographic model
-is calculated automatically, as well as their RMS power spectra.
+The package replaces a legacy Fortran/C pipeline with pure Python (NumPy, SciPy, pyshtools, h5py), runs entirely in memory, and is more precise than the original because it avoids the intermediate ASCII file truncation that accumulated through the Fortran pipeline.
 
 ## Installation
-
-### Prerequisites
-
-- **gfortran** (GNU Fortran compiler)
-- **gcc** (GNU C compiler)
-- **make** (build system)
-- **Unix-like environment** (Linux, macOS, or Windows with WSL)
-
-### Quick Start
-
-```bash
-# Clone or download the repository
-# Navigate to the TOMOFILT directory
-cd /path/to/tomofilt_new_ES
-
-# Build everything (libraries and executables)
-make all
-
-# Set environment variable (add to your shell profile)
-export TOMOFILT=/path/to/tomofilt_new_ES
-```
-
-### Detailed Installation Steps
-
-#### 1. Set Environment Variable
-
-Define the `TOMOFILT` environment variable pointing to the installation directory:
-
-**For Bash** (add to `~/.bashrc` or `~/.bash_profile`):
-```bash
-export TOMOFILT=/path/to/tomofilt_new_ES
-```
-
-**For C-shell** (add to `~/.cshrc`):
-```csh
-setenv TOMOFILT /path/to/tomofilt_new_ES
-```
-
-> **Note**: Use `echo $SHELL` to determine which shell you're running.
-
-#### 2. Build Libraries and Executables
-
-The modernized build system allows you to build everything with a single command:
-
-```bash
-make all
-```
-
-This will:
-- Build all four libraries: `libgeo.a`, `libHJVH.a`, `libS20.a`, `libSphFunc.a`
-- Compile all 13 executables and place them in the `bin/` directory
-
-**Alternative build options:**
-```bash
-# Build only libraries
-make libraries
-
-# Build only executables (requires libraries)
-make executables
-
-# Build individual libraries
-make libgeo
-make libHJVH
-make libS20
-make libSphFunc
-
-# Check build status
-make status
-
-# Clean build artifacts
-make clean
-```
-
-#### 3. Verify Installation
-
-Check that all components were built successfully:
-
-```bash
-# Check build status
-make status
-
-# Verify executables are in bin/
-ls bin/
-
-# Test environment variable
-echo $TOMOFILT
-```
-
-You should see 13 executables in the `bin/` directory and all libraries showing as "built" in the status report.
-
-### Troubleshooting
-
-If you encounter build issues:
-
-```bash
-# Check environment and dependencies
-make doctor
-
-# Clean and rebuild
-make rebuild
-
-# Get help
-make help
-```
-
-## Input
-
-The filtering script firstly reparametrises a given input model to the
-same parametrisation as S20RTS/S40RTS/S12RTS.
-The input model must therefore be evaluated in slices at specified depths
-in the mantle, present in the directory "geodyn".
-
-### Directory Structure
-
-The input model should be organized in the `geodyn/` directory as follows:
-
-```
-geodyn/
-└── [model_name]/
-    ├── depth_layers.dat
-    ├── [name].layer.001.dat
-    ├── [name].layer.002.dat
-    └── ...
-```
-
-**Example**: `geodyn/examplemodel/`
-
-### File Format
-
-Model slices should follow the naming convention:
-```
-[name].layer.[num].dat
-```
-
-Where:
-- `[name]` = model run name (e.g., `examplefile.dvs`)
-- `[num]` = slice number in 3-digit format (e.g., `001`, `010`, `100`)
-
-**Example**: `geodyn/examplemodel/examplefile.dvs.layer.002.dat`
-
-### Data Format
-
-Each slice file should contain three columns:
-```
-longitude(-180,180)  latitude(-90,90)  dvs(%)
-```
-
-### Depth Configuration
-
-The depth intervals must be specified in `geodyn/[model]/depth_layers.dat`:
-
-- Slice `[num]` represents the interval between depth line `N` and `N+1`
-- Example: slice `001` represents the model between depths on lines 1 and 2
-- Typically evaluated at the midpoint between the two depths
-- Number of depths should be 1 more than the number of model slices
-- Maximum depth should not exceed 2890 km (CMB)
-
-### Example Dataset
-
-Sample model slices are provided in `geodyn/examplemodel/`:
-- Files: `examplefile.dvs.layer.001.dat` to `examplefile.dvs.layer.126.dat`
-- Corresponding depth file: `depth_layers.dat`
-
-## Usage
-
-### S-wave Structure Filtering
-
-Filter S-wave velocity structure using S12RTS (degree 12), S20RTS (degree 20), or S40RTS (degree 40) resolution operators.
-
-#### Command Syntax
-
-```bash
-./dofilt_ES_new [model] [name] [firstlay] [lastlay] [degree]
-```
-
-#### Parameters
-
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `model` | Subdirectory name in `geodyn/` | `examplemodel` |
-| `name` | File prefix (before `.layer.num.dat`) | `examplefile.dvs` |
-| `firstlay` | First layer below crust | `1` |
-| `lastlay` | Last layer above CMB | `64` |
-| `degree` | Resolution degree (12, 20, or 40) | `40` |
-
-#### Example
-
-```bash
-./dofilt_ES_new examplemodel examplefile.dvs 1 64 40
-```
-
-#### Output Files
-
-The script generates two `.sph` files:
-
-1. **Reparameterized model**: `inpm.S[degree].[name].repar.sph`
-2. **Filtered model**: `oupm.S[degree].[name].filt.sph`
-
-**Example output**:
-- `inpm.S40.examplefile.dvs.repar.sph`
-- `oupm.S40.examplefile.dvs.filt.sph`
-
-### Optional Outputs
-
-Optional model outputs are automatically calculated when the parameters `do_expand` and `do_compare` in the `dofilt_ES_new` script are set to `1`.
-
-#### Model Expansion (`do_expand = 1`)
-
-When enabled, the reparameterized and filtered model files are evaluated at the given geographic input points for each depth in `depth_layers.dat`.
-
-> **Note**: Output values don't exactly correspond to input values, as they represent depth intervals rather than specific depths.
-
-**Output location**: `geodyn/outputfiles/`
-
-**File naming**:
-- `inpm.S[degree].[name].repar.[depth].dat`
-- `oupm.S[degree].[name].filt.[depth].dat`
-
-**Example**:
-- `inpm.S40.examplefile.dvs.repar.2840.dat`
-- `oupm.S40.examplefile.dvs.filt.2840.dat`
-
-#### Model Comparison (`do_compare = 1`)
-
-When enabled, performs comparisons between the reparameterized/filtered geodynamic files and the tomographic model (S12RTS/S20RTS/S40RTS).
-
-##### Spherical Harmonic Expansions
-
-Calculated for every 25 km depth and stored in `geodyn/rawfiles/`:
-
-- `S[degree]RTS.[depth].raw`
-- `inpm.S[degree].[name].repar.[depth].raw`
-- `oupm.S[degree].[name].filt.[depth].raw`
-
-##### Power Spectra
-
-Generated from spherical harmonic files and stored in `geodyn/pwrfiles/`:
-
-| File Type | Description | Example |
-|-----------|-------------|---------|
-| `*.pwr.dat` | Overall RMS power | `S40RTS.pwr.dat` |
-| `*.pwr.deg.dat` | Power per degree | `S40RTS.pwr.deg.dat` |
-
-**Complete file list**:
-- `S[degree]RTS.pwr.dat` / `S[degree]RTS.pwr.deg.dat`
-- `inpm.S[degree].[name].repar.pwr.dat` / `inpm.S[degree].[name].repar.pwr.deg.dat`
-- `oupm.S[degree].[name].filt.pwr.dat` / `oupm.S[degree].[name].filt.pwr.deg.dat`
-
-##### Correlation Analysis
-
-Correlation calculated between tomographic model and reparameterized/filtered `.sph` files.
-
-**Output location**: `geodyn/comparefiles/`
-
-| File Type | Description | Example |
-|-----------|-------------|---------|
-| `*.corr.dat` | Overall correlation | `corr.S40RTS..inpm.S40.examplefile.dvs.repar.corr.dat` |
-| `*.corr.deg.dat` | Correlation per degree | `corr.S40RTS..inpm.S40.examplefile.dvs.repar.corr.deg.dat` |
-
-##### Lateral Expansion
-
-Files are expanded laterally at all depths using equidistant sampling (1°, 2°, or 5° intervals).
-
-**Output location**: `geodyn/slices/`
-
-**File naming**:
-- `S[degree]RTS.[depth].raw.dat`
-- `inpm.S[degree].[name].repar.[depth].raw.dat`
-- `oupm.S[degree].[name].filt.[depth].raw.dat`
-
-**Example**:
-- `S40RTS.0300.raw.dat`
-- `inpm.S40.examplefile.repar.0300.raw.dat`
-- `oupm.S40.examplefile.filt.0300.raw.dat`
-
-## Python Package (srts)
-
-A pure Python reimplementation of the entire Fortran pipeline is available as the `srts` package. It provides the same tomographic filtering functionality with no compiled dependencies beyond NumPy, SciPy, pyshtools, and h5py.
-
-### Installation
 
 ```bash
 pip install -e ".[test]"
 ```
 
-### Usage
+Dependencies are NumPy, SciPy, pyshtools, and h5py. The HDF5 model files (~4.8 GB for all three models) are downloaded automatically on first use from a public storage bucket, so you need internet access the first time you run anything that touches model data.
 
-The package offers two interfaces: a file-based pipeline function for batch processing, and a class-based API for composable, in-memory workflows.
+## How it works
 
-#### File-based pipeline
+The filtering pipeline has three logical steps.
 
-For users who already have layer `.dat` files on disk, `tomographic_filter()` runs the entire pipeline in one call:
+First, your model (expressed as depth slices on a lon/lat grid) is expanded into spherical harmonics up to the target degree using regularized least-squares. Second, the per-layer SH coefficients are projected onto the 21-knot cubic spline depth basis used by the SxRTS models — this is the reparameterization. Third, the SxRTS resolution matrix is applied to that reparameterized model, producing a filtered version that reflects the limited resolution of the actual tomographic inversion.
+
+The package offers two interfaces for this: a file-based pipeline function that reads layer `.dat` files from disk, and a class-based API for workflows where the data already lives in memory.
+
+## File-based pipeline
+
+If your model is stored as depth-slice ASCII files (the format described below), `tomographic_filter()` runs the entire pipeline in one call:
 
 ```python
 from srts import tomographic_filter
 
 result = tomographic_filter(
-    "geodyn/examplemodel",    # model directory
-    "examplefile.dvs",        # model name
+    "geodyn/examplemodel",   # directory with layer .dat files and depth_layers.dat
+    "examplefile.dvs",       # model name (file prefix before .layer.NNN.dat)
     first_layer=1,
     last_layer=64,
-    degree=40,                # 12, 20, or 40
+    degree=40,               # 12, 20, or 40
+    output_dir=".",          # optional: writes .sph files to disk
     run_analysis=True,
 )
 
-repar = result["repar_coeffs"]   # reparameterized model (21 x natd)
-filt = result["filt_coeffs"]     # filtered model (ndp x natd)
-analysis = result["analysis"]    # power spectra, correlations vs reference
+repar   = result["repar_coeffs"]   # reparameterized model, shape (21, natd)
+filtered = result["filt_coeffs"]   # filtered model, shape (ndp, natd)
+analysis = result["analysis"]      # power spectra and correlations vs reference
 ```
 
-#### Class-based API
+When `output_dir` is set, the function writes two files in the Fortran-compatible `.sph` format:
 
-For programmatic workflows where data lives in memory (numpy arrays, simulation output, etc.), three classes separate the concerns of spatial expansion, depth projection, and resolution filtering. All public methods accept and return pyshtools `cilm[2, lmax+1, lmax+1]` arrays.
+- `inpm.S{degree}.{name}.repar.sph` — the reparameterized model
+- `oupm.S{degree}.{name}.filt.sph` — the tomographically filtered model
+
+These `.sph` files can be read by the S20RTS/S40RTS plotting tools available from Jeroen Ritsema's and Paula Koelemeijer's websites.
+
+### Input file format
+
+The layer `.dat` files live in a subdirectory of `geodyn/`:
+
+```
+geodyn/
+└── examplemodel/
+    ├── depth_layers.dat
+    ├── examplefile.dvs.layer.001.dat
+    ├── examplefile.dvs.layer.002.dat
+    └── ...
+```
+
+Each layer file contains three columns: longitude (−180 to 180), latitude (−90 to 90), and dVs in percent. The `depth_layers.dat` file lists the depth boundaries in km, one per line, with one more entry than the number of layers — layer `N` represents the depth interval between line `N` and line `N+1`. Depths should not exceed 2890 km (the CMB).
+
+An example dataset is included in `geodyn/examplemodel/`.
+
+### Analysis output
+
+When `run_analysis=True`, the `"analysis"` key in the result dict contains power spectra and correlations evaluated at 115 depths from 25 to 2875 km (25 km steps) for the reparameterized model, the filtered model, and the reference tomographic model:
 
 ```python
+a = result["analysis"]
+
+a["depths"]           # (115,) depth array in km
+a["power_repar"]      # (115,) total RMS power of reparameterized model
+a["power_filt"]       # (115,) total RMS power of filtered model
+a["power_ref"]        # (115,) total RMS power of reference (SxRTS)
+a["corr_repar_ref"]   # (115,) correlation with reference, reparameterized model
+a["corr_filt_ref"]    # (115,) correlation with reference, filtered model
+a["power_deg_repar"]  # (115, lmax+1) per-degree power, reparameterized
+a["power_deg_filt"]   # (115, lmax+1) per-degree power, filtered
+a["corr_deg_repar"]   # (115, lmax+1) per-degree correlation, reparameterized
+a["corr_deg_filt"]    # (115, lmax+1) per-degree correlation, filtered
+```
+
+## Class-based API
+
+For workflows where data lives in memory (e.g., output from a geodynamic simulation), three classes decompose the pipeline into independent steps. All public methods use pyshtools `cilm[2, lmax+1, lmax+1]` arrays as their interface, so the output is directly compatible with pyshtools for visualization.
+
+### SphericalHarmonicExpansion
+
+Expands grid data into spherical harmonic coefficients using regularized least-squares. The normal equations are precomputed on construction and reused across layers, so expanding many layers on the same grid is efficient.
+
+```python
+from srts import SphericalHarmonicExpansion
+
+expander = SphericalHarmonicExpansion(lon, lat, lmax=40)
+
+# Expand a single layer: (npoints,) → cilm (2, 41, 41)
+cilm = expander.expand(values)
+
+# Expand multiple layers at once: (nlayers, npoints) → (nlayers, 2, 41, 41)
+cilm_batch = expander.expand_batch(values_2d)
+```
+
+`lon` and `lat` are 1D arrays of coordinates in degrees. For `lmax=40` on a typical geodynamic model grid, construction takes a few seconds; for `lmax=12` it is nearly instant.
+
+### DepthParameterization
+
+Projects per-layer SH coefficients onto the 21-knot cubic spline depth basis and evaluates spline-basis models at arbitrary depths.
+
+```python
+from srts import DepthParameterization
+
+projector = DepthParameterization()
+
+# Reparameterize: list of (2, lmax+1, lmax+1) cilm arrays + depth boundaries (km)
+# Returns (21, 2, lmax+1, lmax+1)
+model = projector.reparameterize(list(cilm_batch), depth_boundaries)
+
+# Evaluate at a single depth (static method, no instance needed)
+cilm_1000 = DepthParameterization.evaluate_at_depth(model, 1000.0)
+
+# Evaluate at multiple depths at once: returns (ndepths, 2, lmax+1, lmax+1)
+depths = np.arange(100, 2800, 50)
+cilm_stack = DepthParameterization.evaluate_at_depths(model, depths)
+```
+
+`depth_boundaries` is a numpy array of shape `(nlayers+1,)` giving the top and bottom of each layer in km.
+
+### TomographicFilter
+
+Loads the eigenvectors and eigenvalues of the SxRTS inversion and applies the resolution matrix. Factory functions `S40RTS()`, `S20RTS()`, and `S12RTS()` provide convenient construction with the default damping parameters from the original inversions.
+
+```python
+from srts import S40RTS, S20RTS, S12RTS
+
+s40 = S40RTS()        # eps = 20e-4  (default for S40RTS)
+s20 = S20RTS()        # eps = 35e-4  (default for S20RTS)
+s12 = S12RTS()        # eps = 40e-4  (default for S12RTS)
+
+# Custom damping
+s40_soft = S40RTS(eps=0.005)
+
+# Apply the resolution matrix: (21, 2, 41, 41) → (ndp, 2, 41, 41)
+filtered = s40.filter(model)
+
+# Access the published reference model as cilm arrays: (ndp, 2, 41, 41)
+reference = s40.reference_model
+```
+
+The `filter()` method takes a model in the 21-spline basis (the output of `DepthParameterization.reparameterize()`) and returns the filtered model at the depth levels covered by the resolution operator.
+
+### Full example
+
+```python
+import numpy as np
 from srts import S40RTS, SphericalHarmonicExpansion, DepthParameterization
 
-# Expand grid data to spherical harmonics
+# lon, lat: (npoints,) coordinate arrays in degrees
+# values:   list of (npoints,) arrays, one per depth layer
+# depth_boundaries: (nlayers+1,) depth boundaries in km
+
+# Expand each layer to spherical harmonics
 expander = SphericalHarmonicExpansion(lon, lat, lmax=40)
-layer_cilms = expander.expand_batch(values)  # (nlayers, 2, 41, 41)
+layer_cilms = expander.expand_batch(np.stack(values))  # (nlayers, 2, 41, 41)
 
 # Project onto the 21-spline depth basis
 projector = DepthParameterization()
@@ -346,54 +173,37 @@ model = projector.reparameterize(list(layer_cilms), depth_boundaries)
 
 # Apply the S40RTS resolution matrix
 s40 = S40RTS()
-filtered = s40.filter(model)  # (ndp, 2, 41, 41)
+filtered = s40.filter(model)
 
-# Evaluate at a specific depth
-coeffs_1000km = DepthParameterization.evaluate_at_depth(filtered, 1000.0)
+# Evaluate at depths of interest
+filtered_at_depths = DepthParameterization.evaluate_at_depths(filtered, np.arange(100, 2800, 50))
+# → (ndepths, 2, 41, 41) — cilm arrays ready for pyshtools
+
+# Visualize a slice with pyshtools
+import pyshtools
+coeffs = pyshtools.SHCoeffs.from_array(filtered_at_depths[10], normalization='ortho', csphase=-1)
+coeffs.expand(grid='DH2').plot()
 ```
 
-Factory functions `S40RTS()`, `S20RTS()`, and `S12RTS()` are provided for convenience. See [DETAILS.md](DETAILS.md) for a thorough walkthrough of the class-based API.
+## Numerical precision
 
-Individual pipeline steps from the functional API are also available:
+The Python implementation is strictly more precise than the original Fortran pipeline. The Fortran code communicates between pipeline stages through ASCII files in `e12.4` format, giving roughly 4 significant digits per value. Over 60+ depth layers, this truncation accumulates. The Python package works in float64 throughout with no intermediate file I/O, eliminating this source of error entirely.
 
-```python
-from srts.parameterization import reparameterize
-from srts.model_data import load_model_data
-from srts.filtering import apply_resolution_matrix, extract_sp_from_spt
-from srts.analysis import evaluate_at_depth, power_spectrum, correlation
-```
+When both implementations process the same `.sph` input (isolating precision effects from algorithm differences), they agree to 6–7 significant digits on filtering, depth evaluation, power spectra, and cross-correlation. The reparameterization step shows a ~0.7% global discrepancy that is entirely attributable to accumulated ASCII truncation in the Fortran path, not to any algorithmic difference.
 
-### Numerical Precision
+## Testing
 
-The Python implementation is more precise than the Fortran pipeline. The original code pipes intermediate results through ASCII files in Fortran `e12.4` format, which provides roughly 4 significant digits per value. Over the course of 60+ layer iterations, these rounding errors accumulate. The Python package uses float64 throughout with no intermediate truncation.
-
-When both implementations start from the same `.sph` file (isolating the effect of intermediate precision), agreement is 6 to 7 significant digits for filtering, depth evaluation, power spectra, and cross-correlation. The reparameterization step, which accumulates all 60+ layers of ASCII truncation in the Fortran path, shows a roughly 0.7% global discrepancy that is entirely attributable to the Fortran's precision loss.
-
-### Validation
-
-The test suite uses a two-tier strategy. 76 unit tests verify each module in isolation (splines, spherical harmonic expansion, I/O round-trips, etc.). 36+ Fortran validation tests compare every pipeline stage against reference outputs produced by the original Fortran `dofilt_ES_new` on an example geodynamic model with S40RTS.
-
-The validation tests are organized by pipeline stage. For isolated steps where both codes read the same `.sph` input file, tolerances are tight (relative differences below 1e-5). For the full end-to-end pipeline, tolerances are slightly looser to accommodate the genuine precision gap from accumulated ASCII truncation in the Fortran path. Additionally, a multi-degree test class validates the filtering pipeline for all three resolutions (S12RTS, S20RTS, S40RTS) using self-consistency checks on the published reference models.
-
-To run the full test suite:
+The test suite covers both unit tests for each module and Fortran validation tests that compare the Python output against reference files produced by the original `dofilt_ES_new` pipeline. To run the unit tests:
 
 ```bash
-python -m pytest tests/ -v
+python -m pytest tests/ --ignore=tests/test_fortran_validation.py -v
 ```
 
-## Support
-
-If you encounter any problems or have questions, please contact:
-
-**Paula Koelemeijer**
-pjkoelemeijer@cantab.net
-
-**Jeroen Ritsema**
-jritsema@umich.edu
+See [TESTING.md](TESTING.md) for the full description of the test data, validation strategy, and CI configuration. See [DETAILS.md](DETAILS.md) for a thorough walkthrough of the class-based API.
 
 ## References
 
-- *Ritsema et al., 1999* - S20RTS model details
-- *Ritsema et al., 2007* - Resolution operator details
-- *Ritsema et al., 2011* - S40RTS model details
-- *Koelemeijer et al., 2016* - S12RTS model details
+- Ritsema, J., van Heijst, H.J. & Woodhouse, J.H. (1999). Complex shear wave velocity structure imaged beneath Africa and Iceland. *Science*, 286, 1925–1928. (S20RTS)
+- Ritsema, J., McNamara, A.K. & Bull, A.L. (2007). Tomographic filtering of geodynamic models: Implications for model interpretation and large-scale mantle structure. *Journal of Geophysical Research*, 112, B01303.
+- Ritsema, J., Deuss, A., van Heijst, H.J. & Woodhouse, J.H. (2011). S40RTS: a degree-40 shear-velocity model for the mantle from new Rayleigh wave dispersion, teleseismic traveltime and normal-mode splitting function measurements. *Geophysical Journal International*, 184, 1223–1236. (S40RTS)
+- Koelemeijer, P., Ritsema, J., Deuss, A. & van Heijst, H.J. (2016). SP12RTS: a degree-12 model of shear- and compressional-wave velocity for Earth's mantle. *Geophysical Journal International*, 204, 1024–1039. (S12RTS)
