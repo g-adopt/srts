@@ -157,6 +157,11 @@ def precompute_expansion(
     identical. This returns everything needed to expand arbitrary data vectors
     on that grid without recomputing the matrix.
 
+    Per-latitude data is stored as (idx, scale, phi) rather than the full
+    (leny, n_at_lat) design matrix block. The At block is reconstructed on
+    the fly when needed. For large irregular grids (e.g. 740K points, lmax=40)
+    this reduces peak memory from ~21 GB to ~220 MB.
+
     Returns dict with keys: 'V', 'lam', 'wnorm', 'build_atd' (callable).
     """
     wnorm = _index_tables(lmax)["wnorm"]
@@ -164,25 +169,33 @@ def precompute_expansion(
     plm_idx, m_val, is_sin = _flat_index_structure(lmax)
     unique_lats, inverse = np.unique(lat, return_inverse=True)
 
-    # Precompute per-latitude quantities
+    # Store (idx, scale, phi) per latitude group.
+    # idx:   integer indices into the point array — O(n_at_lat) per group
+    # scale: per-SH-slot Legendre × wnorm — O(leny) per group
+    # phi:   longitude in radians — O(n_at_lat) per group
+    # Total: O(leny * n_unique_lats + N_total), vs O(leny * N_total) for At.
     lat_data = []
     for ilat in range(len(unique_lats)):
-        mask = inverse == ilat
+        idx = np.where(inverse == ilat)[0]
         cos_theta = np.cos(np.radians(90.0 - unique_lats[ilat]))
         plm = pyshtools.legendre.PlmBar(lmax, cos_theta, csphase=-1) / np.sqrt(4.0 * np.pi)
-        phi = np.radians(lon[mask])
-        m_phi = np.outer(m_val, phi)
-        trig = np.where(is_sin[:, np.newaxis], np.sin(m_phi), np.cos(m_phi))
+        phi = np.radians(lon[idx])
         plm_at_slots = plm[plm_idx]
         plm_at_slots = np.where(m_val > 0, plm_at_slots / np.sqrt(2.0), plm_at_slots)
         scale = plm_at_slots * wnorm
-        At = scale[:, np.newaxis] * trig  # (leny, n_at_lat)
-        lat_data.append((mask, At))
+        lat_data.append((idx, scale, phi))
 
-    # Build ATA once
+    def _at(scale: np.ndarray, phi: np.ndarray) -> np.ndarray:
+        """Reconstruct the (leny, n_at_lat) design matrix block."""
+        m_phi = np.outer(m_val, phi)
+        trig = np.where(is_sin[:, np.newaxis], np.sin(m_phi), np.cos(m_phi))
+        return scale[:, np.newaxis] * trig
+
+    # Build ATA once, computing At on the fly and discarding it immediately.
     leny = (lmax + 1) ** 2
     ata = np.zeros((leny, leny), dtype=np.float64)
-    for mask, At in lat_data:
+    for idx, scale, phi in lat_data:
+        At = _at(scale, phi)
         ata += At @ At.T
 
     eigenvalues, eigenvectors = scipy.linalg.eigh(ata)
@@ -193,8 +206,8 @@ def precompute_expansion(
 
     def build_atd(values: np.ndarray) -> np.ndarray:
         atd = np.zeros(leny, dtype=np.float64)
-        for mask, At in lat_data:
-            atd += At @ values[mask]
+        for idx, scale, phi in lat_data:
+            atd += _at(scale, phi) @ values[idx]
         return atd
 
     def build_atd_batch(values_batch: np.ndarray) -> np.ndarray:
@@ -208,8 +221,9 @@ def precompute_expansion(
         """
         nlayers = values_batch.shape[0]
         ATD = np.zeros((leny, nlayers), dtype=np.float64)
-        for mask, At in lat_data:
-            ATD += At @ values_batch[:, mask].T
+        for idx, scale, phi in lat_data:
+            At = _at(scale, phi)
+            ATD += At @ values_batch[:, idx].T
         return ATD
 
     n_pts = len(lon)
@@ -247,8 +261,9 @@ def precompute_expansion(
         flat_batch[:, t["flat_sin_idx"]] = cilm_batch[:, 1, t["l_vals"][t["mgt0"]], t["m_vals"][t["mgt0"]]]
 
         values = np.zeros((nlayers, n_pts), dtype=np.float64)
-        for mask, At in lat_data:
-            values[:, mask] = flat_batch @ At  # (nlayers, leny) @ (leny, n_at_lat)
+        for idx, scale, phi in lat_data:
+            At = _at(scale, phi)
+            values[:, idx] = flat_batch @ At  # (nlayers, leny) @ (leny, n_at_lat)
         return values
 
     return {
