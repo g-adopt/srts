@@ -6,6 +6,7 @@ import pytest
 
 from srts.coeffs import fortran_flat_to_shcoeffs, shcoeffs_to_fortran_flat
 from srts.expansion import expand_to_sh, precompute_expansion, expand_with_precomputed
+from srts import SphericalHarmonicExpansion
 
 
 def _make_grid(spacing=2.0):
@@ -76,3 +77,71 @@ class TestPrecomputed:
         r2 = expand_with_precomputed(precomp, v2)
         # They should differ
         assert np.max(np.abs(r1 - r2)) > 1e-6
+
+
+class TestSynthesizeBatch:
+    """Tests for SphericalHarmonicExpansion.synthesize_batch."""
+
+    def _make_expander(self, spacing=2.0, lmax=10):
+        lon, lat = _make_grid(spacing)
+        return SphericalHarmonicExpansion(lon, lat, lmax=lmax), lon, lat
+
+    def test_round_trip_smooth_signal(self):
+        """expand_batch followed by synthesize_batch recovers a smooth field."""
+        expander, lon, lat = self._make_expander(spacing=2.0, lmax=10)
+        # Y_20: smooth, bandlimited, well within lmax=10
+        colat = np.radians(90.0 - lat)
+        signal = np.array([
+            pyshtools.legendre.PlmBar(2, np.cos(c))[3] for c in colat
+        ])
+        values_batch = signal[np.newaxis, :]          # (1, npoints)
+        cilm_batch   = expander.expand_batch(values_batch)
+        recovered    = expander.synthesize_batch(cilm_batch)  # (1, npoints)
+        np.testing.assert_allclose(recovered[0], signal, atol=2e-3)
+
+    def test_batch_matches_individual_layers(self):
+        """synthesize_batch on N layers matches N individual single-layer calls."""
+        expander, lon, lat = self._make_expander(spacing=5.0, lmax=6)
+        rng = np.random.default_rng(0)
+        values_batch = rng.standard_normal((4, len(lon)))
+        cilm_batch   = expander.expand_batch(values_batch)  # (4, 2, 7, 7)
+
+        all_at_once = expander.synthesize_batch(cilm_batch)  # (4, npoints)
+        for i in range(4):
+            single = expander.synthesize_batch(cilm_batch[i:i+1])  # (1, npoints)
+            np.testing.assert_allclose(all_at_once[i], single[0], atol=1e-14)
+
+    def test_lmax_padding(self):
+        """A truncated cilm gives the same result as explicit zero-padding."""
+        expander, lon, lat = self._make_expander(spacing=5.0, lmax=10)
+        rng = np.random.default_rng(1)
+        values_batch = rng.standard_normal((3, len(lon)))
+        cilm_batch   = expander.expand_batch(values_batch)  # (3, 2, 11, 11)
+
+        # Truncate to lmax=6
+        cilm_truncated = cilm_batch[:, :, :7, :7].copy()
+
+        # Manual zero-pad back to lmax=10
+        cilm_padded = np.zeros_like(cilm_batch)
+        cilm_padded[:, :, :7, :7] = cilm_truncated
+
+        result_auto   = expander.synthesize_batch(cilm_truncated)
+        result_manual = expander.synthesize_batch(cilm_padded)
+        np.testing.assert_allclose(result_auto, result_manual, atol=1e-14)
+
+    def test_linearity(self):
+        """synthesize_batch is linear in the cilm coefficients."""
+        expander, lon, lat = self._make_expander(spacing=5.0, lmax=6)
+        rng = np.random.default_rng(2)
+        values_batch = rng.standard_normal((2, len(lon)))
+        cilm_batch   = expander.expand_batch(values_batch)  # (2, 2, 7, 7)
+
+        a, b = 2.5, -1.3
+        combined = expander.synthesize_batch(
+            a * cilm_batch[0:1] + b * cilm_batch[1:2]
+        )
+        expected = (
+            a * expander.synthesize_batch(cilm_batch[0:1])
+            + b * expander.synthesize_batch(cilm_batch[1:2])
+        )
+        np.testing.assert_allclose(combined, expected, atol=1e-12)
