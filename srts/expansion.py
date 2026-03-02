@@ -212,12 +212,52 @@ def precompute_expansion(
             ATD += At @ values_batch[:, mask].T
         return ATD
 
+    n_pts = len(lon)
+
+    def build_synthesis_batch(cilm_batch: np.ndarray) -> np.ndarray:
+        """Synthesize a batch of cilm arrays back to grid values.
+
+        Transpose of build_atd_batch: given SH coefficients, evaluates the
+        expansion at every grid point using the precomputed At matrices
+        (Legendre polynomials already computed during setup).
+
+        cilm_batch with lmax smaller than the expander's lmax is zero-padded
+        automatically, so filtered S20RTS / S12RTS results can be passed
+        directly without any preprocessing.
+
+        Args:
+            cilm_batch: shape (nlayers, 2, lmax+1, lmax+1).
+
+        Returns:
+            shape (nlayers, npoints).
+        """
+        t = _index_tables(lmax)
+        nlayers = cilm_batch.shape[0]
+        lmax_in = cilm_batch.shape[-1] - 1
+
+        if lmax_in < lmax:
+            padded = np.zeros((nlayers, 2, lmax + 1, lmax + 1), dtype=np.float64)
+            padded[:, :, :lmax_in + 1, :lmax_in + 1] = cilm_batch
+            cilm_batch = padded
+
+        # Convert cilm to the internal flat ordering (no wnorm / 0.01 scaling).
+        # At[j, i] = Y_j(lat, lon_i), so flat_batch @ At gives the synthesis.
+        flat_batch = np.zeros((nlayers, leny), dtype=np.float64)
+        flat_batch[:, t["flat_cos_idx"]] = cilm_batch[:, 0, t["l_vals"], t["m_vals"]]
+        flat_batch[:, t["flat_sin_idx"]] = cilm_batch[:, 1, t["l_vals"][t["mgt0"]], t["m_vals"][t["mgt0"]]]
+
+        values = np.zeros((nlayers, n_pts), dtype=np.float64)
+        for mask, At in lat_data:
+            values[:, mask] = flat_batch @ At  # (nlayers, leny) @ (leny, n_at_lat)
+        return values
+
     return {
         "V": V,
         "lam": lam,
         "wnorm": wnorm,
         "build_atd": build_atd,
         "build_atd_batch": build_atd_batch,
+        "build_synthesis_batch": build_synthesis_batch,
         "damp": damp,
     }
 
@@ -261,6 +301,22 @@ class SphericalHarmonicExpansion:
         """
         raw = expand_with_precomputed(self._precomp, values)
         return fortran_flat_raw_to_shcoeffs(raw, self._lmax)
+
+    def synthesize_batch(self, cilm_batch: np.ndarray) -> np.ndarray:
+        """Evaluate SH coefficients at every grid point for multiple layers.
+
+        Inverse of expand_batch. Reuses the precomputed At matrices so
+        Legendre polynomials are never recomputed. cilm_batch may have a
+        smaller lmax than the expander (e.g. filtered S20RTS / S12RTS output)
+        and will be zero-padded automatically.
+
+        Args:
+            cilm_batch: cilm arrays, shape (nlayers, 2, lmax+1, lmax+1).
+
+        Returns:
+            Grid values, shape (nlayers, npoints).
+        """
+        return self._precomp["build_synthesis_batch"](cilm_batch)
 
     def expand_batch(self, values_batch: np.ndarray) -> np.ndarray:
         """Expand multiple layers of grid values at once.

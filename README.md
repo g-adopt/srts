@@ -60,9 +60,14 @@ cilm = expander.expand(values)
 
 # All layers at once: (nlayers, npoints) → (nlayers, 2, 41, 41)
 cilm_batch = expander.expand_batch(values_2d)
+
+# Synthesize back: (nlayers, 2, 41, 41) → (nlayers, npoints)
+values_2d = expander.synthesize_batch(cilm_batch)
 ```
 
 `lon` and `lat` are 1D arrays of coordinates in degrees. The setup cost scales with the number of unique latitudes in the grid. On a regular lon/lat mesh the operator is built from one matrix product per latitude band, which is far more efficient than the same number of irregularly scattered points.
+
+`synthesize_batch` is the inverse of `expand_batch`: it evaluates the SH expansion at every grid point, reusing the Legendre polynomial matrices already computed during setup. cilm arrays with a smaller lmax than the expander (e.g. output from S20RTS or S12RTS filtering) are zero-padded automatically.
 
 ### DepthParameterization
 
