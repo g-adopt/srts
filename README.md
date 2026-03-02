@@ -2,8 +2,6 @@
 
 `srts` is a Python package for applying tomographic resolution filters to geodynamic models, following the methodology of Ritsema et al. (2007). It wraps the S12RTS, S20RTS, and S40RTS resolution operators, letting you reparameterize a geodynamic model onto the seismic tomography basis and then apply the tomographic resolution matrix to produce a filtered model — i.e., what a seismologist would recover from your model given real data coverage.
 
-The package replaces a legacy Fortran/C pipeline with pure Python (NumPy, SciPy, pyshtools, h5py), runs entirely in memory, and is more precise than the original because it avoids the intermediate ASCII file truncation that accumulated through the Fortran pipeline.
-
 ## Installation
 
 ```bash
@@ -11,14 +9,6 @@ pip install -e ".[test]"
 ```
 
 Dependencies are NumPy, SciPy, pyshtools, and h5py. The HDF5 model files (~4.8 GB for all three models) are downloaded automatically on first use from a public storage bucket, so you need internet access the first time you run anything that touches model data.
-
-## How it works
-
-The filtering pipeline has three logical steps.
-
-First, your model (expressed as depth slices on a lon/lat grid) is expanded into spherical harmonics up to the target degree using regularized least-squares. Second, the per-layer SH coefficients are projected onto the 21-knot cubic spline depth basis used by the SxRTS models — this is the reparameterization. Third, the SxRTS resolution matrix is applied to that reparameterized model, producing a filtered version that reflects the limited resolution of the actual tomographic inversion.
-
-The package offers two interfaces for this: a file-based pipeline function that reads layer `.dat` files from disk, and a class-based API for workflows where the data already lives in memory.
 
 ## File-based pipeline
 
@@ -37,9 +27,9 @@ result = tomographic_filter(
     run_analysis=True,
 )
 
-repar   = result["repar_coeffs"]   # reparameterized model, shape (21, natd)
-filtered = result["filt_coeffs"]   # filtered model, shape (ndp, natd)
-analysis = result["analysis"]      # power spectra and correlations vs reference
+repar    = result["repar_coeffs"]   # reparameterized model, shape (21, natd)
+filtered = result["filt_coeffs"]    # filtered model, shape (ndp, natd)
+analysis = result["analysis"]       # power spectra and correlations vs reference
 ```
 
 When `output_dir` is set, the function writes two files in the Fortran-compatible `.sph` format:
@@ -105,7 +95,7 @@ cilm = expander.expand(values)
 cilm_batch = expander.expand_batch(values_2d)
 ```
 
-`lon` and `lat` are 1D arrays of coordinates in degrees. For `lmax=40` on a typical geodynamic model grid, construction takes a few seconds; for `lmax=12` it is nearly instant.
+`lon` and `lat` are 1D arrays of coordinates in degrees. The setup cost scales with the number of **unique latitudes** in your grid, not the total point count. On a regular lon/lat grid the expansion operator is built from a small number of fat matrix products (one per latitude band), which is far more efficient than the same number of points scattered irregularly across the sphere. If you have freedom over the input grid format, a regular lat/lon mesh will give substantially better performance than an unstructured or spiral point cloud of the same size.
 
 ### DepthParameterization
 
@@ -185,9 +175,17 @@ coeffs = pyshtools.SHCoeffs.from_array(filtered_at_depths[10], normalization='or
 coeffs.expand(grid='DH2').plot()
 ```
 
-## Numerical precision
+## How it works
 
-The Python implementation is strictly more precise than the original Fortran pipeline. The Fortran code communicates between pipeline stages through ASCII files in `e12.4` format, giving roughly 4 significant digits per value. Over 60+ depth layers, this truncation accumulates. The Python package works in float64 throughout with no intermediate file I/O, eliminating this source of error entirely.
+The filtering pipeline has three logical steps.
+
+First, your model (expressed as depth slices on a lon/lat grid) is expanded into spherical harmonics up to the target degree using regularized least-squares. Second, the per-layer SH coefficients are projected onto the 21-knot cubic spline depth basis used by the SxRTS models — this is the reparameterization. Third, the SxRTS resolution matrix is applied to that reparameterized model, producing a filtered version that reflects the limited resolution of the actual tomographic inversion.
+
+The package offers two interfaces for this: a file-based pipeline function that reads layer `.dat` files from disk, and a class-based API for workflows where the data already lives in memory.
+
+## Accuracy
+
+The Python implementation is strictly more accurate than the original Fortran pipeline. Because all data passes between stages as in-memory float64 arrays — no intermediate files, no format conversions — there is no truncation at any step. The Fortran pipeline communicated between stages through ASCII files in `e12.4` format, giving roughly 4 significant digits per value. Across 60+ depth layers that truncation accumulates. The Python package works in float64 throughout, eliminating this error source entirely.
 
 When both implementations process the same `.sph` input (isolating precision effects from algorithm differences), they agree to 6–7 significant digits on filtering, depth evaluation, power spectra, and cross-correlation. The reparameterization step shows a ~0.7% global discrepancy that is entirely attributable to accumulated ASCII truncation in the Fortran path, not to any algorithmic difference.
 
@@ -199,7 +197,6 @@ The test suite covers both unit tests for each module and Fortran validation tes
 python -m pytest tests/ --ignore=tests/test_fortran_validation.py -v
 ```
 
-See [TESTING.md](TESTING.md) for the full description of the test data, validation strategy, and CI configuration. See [DETAILS.md](DETAILS.md) for a thorough walkthrough of the class-based API.
 
 ## References
 
