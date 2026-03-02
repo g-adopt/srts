@@ -17,7 +17,11 @@ import numpy as np
 import pyshtools
 import scipy.linalg
 
-from srts.coeffs import _index_tables, fortran_flat_raw_to_shcoeffs
+from srts.coeffs import (
+    _index_tables,
+    batch_fortran_flat_raw_to_shcoeffs,
+    fortran_flat_raw_to_shcoeffs,
+)
 
 
 @lru_cache(maxsize=8)
@@ -193,7 +197,29 @@ def precompute_expansion(
             atd += At @ values[mask]
         return atd
 
-    return {"V": V, "lam": lam, "wnorm": wnorm, "build_atd": build_atd, "damp": damp}
+    def build_atd_batch(values_batch: np.ndarray) -> np.ndarray:
+        """Accumulate A^T D for all layers simultaneously via GEMM.
+
+        Args:
+            values_batch: shape (nlayers, npoints).
+
+        Returns:
+            shape (leny, nlayers).
+        """
+        nlayers = values_batch.shape[0]
+        ATD = np.zeros((leny, nlayers), dtype=np.float64)
+        for mask, At in lat_data:
+            ATD += At @ values_batch[:, mask].T
+        return ATD
+
+    return {
+        "V": V,
+        "lam": lam,
+        "wnorm": wnorm,
+        "build_atd": build_atd,
+        "build_atd_batch": build_atd_batch,
+        "damp": damp,
+    }
 
 
 def expand_with_precomputed(precomp: dict, values: np.ndarray) -> np.ndarray:
@@ -239,14 +265,27 @@ class SphericalHarmonicExpansion:
     def expand_batch(self, values_batch: np.ndarray) -> np.ndarray:
         """Expand multiple layers of grid values at once.
 
+        Fully batched: replaces the per-layer GEMV loop with a single GEMM
+        per latitude group, then solves all layers simultaneously.
+
         Args:
             values_batch: Grid values, shape (nlayers, npoints).
 
         Returns:
             cilm arrays, shape (nlayers, 2, lmax+1, lmax+1).
         """
-        nlayers = values_batch.shape[0]
-        result = np.empty((nlayers, 2, self._lmax + 1, self._lmax + 1), dtype=np.float64)
-        for i in range(nlayers):
-            result[i] = self.expand(values_batch[i])
-        return result
+        precomp = self._precomp
+        V, lam, damp, wnorm = (
+            precomp["V"], precomp["lam"], precomp["damp"], precomp["wnorm"]
+        )
+
+        # (leny, nlayers): one GEMM per latitude group
+        ATD = precomp["build_atd_batch"](values_batch)
+
+        # Batch solve — identical algebra to expand_with_precomputed, applied column-wise
+        projections = V.T @ ATD                                   # (n_active, nlayers)
+        X = V @ (projections / (lam + damp)[:, np.newaxis])      # (leny, nlayers)
+        X *= (wnorm * 0.01)[:, np.newaxis]
+
+        # X.T is (nlayers, leny) — convert all layers to cilm in one vectorized pass
+        return batch_fortran_flat_raw_to_shcoeffs(X.T, self._lmax)

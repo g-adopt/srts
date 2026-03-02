@@ -101,6 +101,28 @@ def shcoeffs_to_fortran_flat_raw(cilm: np.ndarray) -> np.ndarray:
     return flat
 
 
+def batch_fortran_flat_raw_to_shcoeffs(flat_batch: np.ndarray, lmax: int) -> np.ndarray:
+    """Convert a batch of .raw flat arrays to a stack of cilm arrays.
+
+    Vectorized equivalent of calling fortran_flat_raw_to_shcoeffs row-by-row.
+
+    Args:
+        flat_batch: shape (nlayers, natd) in .raw convention (0.01 scale + normylm).
+        lmax: Maximum SH degree.
+
+    Returns:
+        shape (nlayers, 2, lmax+1, lmax+1).
+    """
+    t = _index_tables(lmax)
+    nlayers = flat_batch.shape[0]
+    cilm = np.zeros((nlayers, 2, lmax + 1, lmax + 1), dtype=np.float64)
+    cilm[:, 0, t["l_vals"], t["m_vals"]] = flat_batch[:, t["flat_cos_idx"]]
+    cilm[:, 1, t["l_vals"][t["mgt0"]], t["m_vals"][t["mgt0"]]] = flat_batch[:, t["flat_sin_idx"]]
+    cilm *= 100.0
+    cilm[:, :, :, 1:] /= np.sqrt(2.0)
+    return cilm
+
+
 def cilm_stack_to_internal(cilm_stack: np.ndarray) -> np.ndarray:
     """Convert a stack of cilm arrays to internal flat format.
 
