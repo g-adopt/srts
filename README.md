@@ -1,5 +1,7 @@
 # srts — Tomographic Filtering for Geodynamic Models
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18829196.svg)](https://doi.org/10.5281/zenodo.18829196)
+
 `srts` is a Python package for applying tomographic resolution filters to geodynamic models, following the methodology of Ritsema et al. (2007). It wraps the S12RTS, S20RTS, and S40RTS resolution operators, letting you reparameterize a geodynamic model onto the seismic tomography basis and apply the resolution matrix to produce a filtered model — i.e., what a seismologist would recover from your model given real data coverage.
 
 ## Installation
@@ -175,6 +177,10 @@ a["corr_deg_filt"]    # (115, lmax+1) per-degree correlation, filtered
 ## Accuracy
 
 The Python implementation is more accurate than the original Fortran pipeline. The Fortran code communicated between pipeline stages through ASCII files in `e12.4` format, giving roughly 4 significant digits per value — truncation that accumulates across 60+ depth layers. This package works in float64 throughout with no intermediate file I/O. When both implementations process the same `.sph` input, they agree to 6–7 significant digits on filtering, depth evaluation, power spectra, and cross-correlation.
+
+## Citing srts
+
+If you use `srts` in published work, cite the software and the filtering method of Ritsema et al. (2007). The concept DOI [10.5281/zenodo.18829196](https://doi.org/10.5281/zenodo.18829196) always resolves to the latest release. Each release also has its own DOI, which the Zenodo record lists. The repository contains a `CITATION.cff` file, so GitHub shows the citation in BibTeX and APA format under "Cite this repository".
 
 ## References
 

@@ -1,0 +1,60 @@
+{
+  "title": "srts: tomographic filtering of geodynamic models",
+  "upload_type": "software",
+  "description": "<p>srts is a Python package that applies the resolution operators of the S12RTS, S20RTS and S40RTS shear-velocity models to geodynamic models, following the method of Ritsema et al. (2007). A geodynamic model is expanded in spherical harmonics, projected onto the 21-knot cubic spline depth basis of the tomographic models, and multiplied by the model resolution matrix. The result is the structure that the tomographic inversion would recover from the geodynamic model, given the data coverage and damping of the real inversion.</p><p>The package is a Python implementation of the Fortran tomographic filtering codes of Jeroen Ritsema and Paula Koelemeijer. It works in double precision without intermediate ASCII files, and agrees with the Fortran codes to 6 to 7 significant digits.</p>",
+  "creators": [
+    {
+      "name": "Ritsema, Jeroen",
+      "affiliation": "University of Michigan",
+      "orcid": "0000-0003-4287-7639"
+    },
+    {
+      "name": "Koelemeijer, Paula",
+      "affiliation": "University of Oxford",
+      "orcid": "0000-0001-5153-3040"
+    },
+    {
+      "name": "Ghelichkhan, Siavash",
+      "affiliation": "Australian National University",
+      "orcid": "0000-0002-1316-3170"
+    }
+  ],
+  "license": "MIT",
+  "keywords": [
+    "seismic tomography",
+    "tomographic filtering",
+    "resolution matrix",
+    "geodynamics",
+    "mantle convection",
+    "spherical harmonics",
+    "S40RTS",
+    "S20RTS",
+    "S12RTS"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.1029/2006JB004566",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "10.1126/science.286.5446.1925",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "10.1111/j.1365-246X.2010.04884.x",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "10.1093/gji/ggv481",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    }
+  ]
+}
